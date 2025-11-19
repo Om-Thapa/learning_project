@@ -1,5 +1,6 @@
 import Event from "@/database/event.model";
 import connectDB from "@/lib/mongodb";
+import { v2 as cloudinary } from "cloudinary";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function POST(req: NextRequest) {
@@ -15,12 +16,46 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ message: "Invalid JSON data format"} , { status: 400 });
         }
 
+        const file = formData.get('image') as File;
+        if(!file) return NextResponse.json({ message: 'Image file is required'}, { status: 400 });
+
+        let tags = JSON.parse(formData.get('tags') as string);
+        let agenda = JSON.parse(formData.get('agenda') as string);
+
+        const arrayBuffer = await file.arrayBuffer();
+        const buffer = Buffer.from(arrayBuffer);
+
+        const uploadResult = await new Promise((res, rej) => {
+            cloudinary.uploader.upload_stream({ resource_type: 'image', folder: 'DevEvent'}, (error, result) => {
+                if(error) return rej(error);
+
+                res(result);
+            }).end(buffer);
+        });
+
+        event.image = ( uploadResult as { secure_url: string }).secure_url;
+
         const createdEvent = await Event.create({
             ...event,
-        })
+            tags: tags,
+            agenda: agenda,
+        });
+        
         return NextResponse.json({ message: "Event created successfully", event: createdEvent }, { status: 201 });
     } catch (e) {
         console.log(e);
         return NextResponse.json({ message: 'Event creation failed', error: e }, { status: 500 });
+    }
+}
+
+export async function GET() {
+    try {
+        await connectDB();
+
+        const events = await Event.find().sort({ createdAt: -1 });
+
+        return NextResponse.json({ message: 'Events fetched successfully', events }, { status: 200 });
+    } catch (e) {
+        return NextResponse.json({ message: 'Event fetching failer' , error: e}, { status: 500 });
     }
 }
